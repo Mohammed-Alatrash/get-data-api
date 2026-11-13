@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Catalogue</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,800&family=Hanken+Grotesk:wght@400;500;600&display=swap">
+<style>
+:root{
+  --paper:#ECE8DF;   /* newsprint */
+  --tint:#DDD6C7;    /* image plate */
+  --ink:#1D1B18;     /* text, rules */
+  --mute:#625D53;    /* secondary text */
+  --line:#B9B2A2;    /* hairlines */
+  --accent:#D6361F;  /* the single accent */
+  --serif:"Fraunces",Georgia,serif;
+  --sans:"Hanken Grotesk",system-ui,sans-serif;
+}
+*{box-sizing:border-box;margin:0}
+[hidden]{display:none!important}
+body{background:var(--paper);color:var(--ink);font:400 1rem/1.5 var(--sans)}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+
+.wrap{display:grid;grid-template-columns:15rem 1fr;gap:0 3.5rem;max-width:86rem;margin:auto;padding:2.5rem 1.5rem 4rem}
+
+/* Categories */
+aside{position:sticky;top:1.5rem;align-self:start;max-height:calc(100vh - 3rem);overflow:auto}
+aside h2{font:600 1.15rem var(--serif);padding-bottom:.6rem;border-bottom:2px solid var(--ink)}
+.cats ul{list-style:none;padding:0}
+.cats button{all:unset;box-sizing:border-box;display:block;width:100%;padding:.5rem 0 .5rem .9rem;border-bottom:1px solid var(--line);cursor:pointer;text-transform:capitalize}
+.cats button:hover{background:var(--tint)}
+.cats button[aria-pressed=true]{font-weight:600;box-shadow:inset 5px 0 var(--accent)}
+.cats button:focus-visible{outline:3px solid var(--accent);outline-offset:-3px}
+
+/* Masthead */
+header{border-bottom:2px solid var(--ink);padding-bottom:1.5rem;margin-bottom:2.25rem}
+h1{font:800 clamp(2.8rem,8vw,6.5rem)/.95 var(--serif);letter-spacing:-.03em;text-transform:capitalize;overflow-wrap:anywhere}
+#count{color:var(--mute);margin-top:1rem}
+
+/* Products */
+.grid{list-style:none;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(14rem,1fr));gap:2.75rem 1.75rem}
+.pic{aspect-ratio:1;background:var(--tint);display:grid;place-items:center;overflow:hidden;transition:background .25s}
+.pic img{width:100%;height:100%;object-fit:contain;mix-blend-mode:multiply;transition:transform .3s}
+.row{display:flex;justify-content:space-between;gap:1rem;margin-top:.85rem;padding-top:.6rem;border-top:1px solid var(--ink);transition:border-color .25s}
+h3{font:600 1.05rem/1.25 var(--serif)}
+.price{font-weight:600;font-variant-numeric:tabular-nums}
+.sub{display:flex;justify-content:space-between;gap:1rem;margin-top:.25rem;color:var(--mute);font-size:.9rem;text-transform:capitalize}
+/* Hover on product cards */
+article:hover .pic{background:#D2CAB8}
+article:hover img{transform:scale(1.07)}
+article:hover .row{border-top-color:var(--accent)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+
+/* States */
+#msg{margin-top:2rem}
+#msg button,.more{font:600 1rem var(--sans);color:var(--ink);background:transparent;border:2px solid var(--ink);padding:.65rem 1.5rem;cursor:pointer}
+#msg button:hover,.more:hover{background:var(--ink);color:var(--paper)}
+.more{display:block;margin:3.5rem auto 0}
+
+@media (max-width:48rem){
+  .wrap{grid-template-columns:1fr;padding-top:1.5rem}
+  aside{position:static;max-height:none;margin-bottom:2rem}
+  aside h2{border:0;padding:0 0 .4rem}
+  .cats ul{display:flex;gap:1.25rem;overflow-x:auto;border-bottom:2px solid var(--ink)}
+  .cats button{width:auto;white-space:nowrap;padding:.5rem 0;border:0}
+  .cats button[aria-pressed=true]{box-shadow:inset 0 -5px var(--accent)}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <aside>
+    <nav class="cats" aria-label="Categories">
+      <h2>Categories</h2>
+      <ul id="cats"></ul>
+    </nav>
+  </aside>
+
+  <main>
+    <header>
+      <h1 id="title">All products</h1>
+      <p id="count"></p>
+    </header>
+    <ul class="grid" id="grid"></ul>
+    <p id="msg" role="status"></p>
+    <button class="more" id="more" type="button" hidden>Show more</button>
+  </main>
+</div>
+
+<script>
+const API = 'https://dummyjson.com/products';
+const LIMIT = 24;
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"']/g, c => '&#' + c.charCodeAt(0) + ';');
+
+let cat = '';   // slug of the selected category ('' = all)
+let skip = 0;   // how many products are already shown
+let req = 0;    // id of the latest request, to ignore stale responses
+
+async function getJSON(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  return r.json();
+}
+
+function showError(text, retry) {
+  $('msg').innerHTML = esc(text) + ' <button type="button">Try again</button>';
+  $('msg').querySelector('button').onclick = retry;
+}
+
+/* ---------- Categories ---------- */
+async function loadCategories() {
+  try {
+    const list = await getJSON(API + '/categories');
+    const all = [{ slug: '', name: 'All products' }, ...list.map(c =>
+      typeof c === 'string' ? { slug: c, name: c.replace(/-/g, ' ') } : c)];
+    $('cats').innerHTML = all.map(c =>
+      `<li><button type="button" data-slug="${esc(c.slug)}" data-name="${esc(c.name)}" aria-pressed="${c.slug === cat}">${esc(c.name)}</button></li>`
+    ).join('');
+  } catch {
+    $('cats').innerHTML = '<li><button type="button" id="retry-cats">Could not load categories. Try again</button></li>';
+    $('retry-cats').onclick = loadCategories;
+  }
+}
+
+$('cats').addEventListener('click', e => {
+  const b = e.target.closest('button[data-slug]');
+  if (!b) return;
+  cat = b.dataset.slug;
+  $('title').textContent = b.dataset.name;
+  document.querySelectorAll('#cats button').forEach(x => x.setAttribute('aria-pressed', x === b));
+  loadProducts(true);
+});
+
+/* ---------- Products ---------- */
+const card = p => `
+  <li><article>
+    <div class="pic"><img src="${esc(p.thumbnail)}" alt="${esc(p.title)}" width="300" height="300" loading="lazy"></div>
+    <div class="row"><h3>${esc(p.title)}</h3><span class="price">$${p.price.toFixed(2)}</span></div>
+    <p class="sub"><span>${esc((p.brand || p.category).replace(/-/g, ' '))}</span><span>${p.rating.toFixed(1)} / 5</span></p>
+  </article></li>`;
+
+async function loadProducts(reset) {
+  const id = ++req;
+  if (reset) { skip = 0; $('grid').innerHTML = ''; $('count').textContent = ''; }
+  $('more').hidden = true;
+  $('msg').textContent = 'Loading…';
+  try {
+    const base = cat ? `${API}/category/${cat}` : API;
+    const d = await getJSON(`${base}?limit=${LIMIT}&skip=${skip}`);
+    if (id !== req) return;                 // user clicked another category meanwhile
+    $('grid').insertAdjacentHTML('beforeend', d.products.map(card).join(''));
+    skip += d.products.length;
+    $('count').textContent = `Showing ${skip} of ${d.total} items`;
+    $('msg').textContent = d.total ? '' : 'No products in this category.';
+    $('more').hidden = skip >= d.total;
+  } catch {
+    if (id === req) showError('Could not load products.', () => loadProducts(reset));
+  }
+}
+
+$('more').onclick = () => loadProducts(false);
+
+loadCategories();
+loadProducts(true);
+</script>
+</body>
+</html>
